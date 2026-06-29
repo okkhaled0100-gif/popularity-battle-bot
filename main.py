@@ -42,8 +42,8 @@ def init_firestore():
 
 db = init_firestore()
 
-# ---------------- Points table ----------------
-TIERS = [
+# ---------------- Points tables ----------------
+TIERS_INDIVIDUAL = [
     (0, 2000, 6),
     (2001, 4000, 10),
     (4001, 8000, 14),
@@ -58,8 +58,27 @@ TIERS = [
     (8000001, float("inf"), 44),
 ]
 
-def points_for(n: int) -> int:
-    for lo, hi, pts in TIERS:
+TIERS_TEAM = [
+    (0, 5000, 6),
+    (5001, 12000, 10),
+    (12001, 26000, 14),
+    (26001, 48000, 16),
+    (48001, 120000, 20),
+    (120001, 200000, 24),
+    (200001, 400000, 28),
+    (400001, 560000, 32),
+    (560001, 800000, 34),
+    (800001, 1600000, 36),
+    (1600001, 3200000, 38),
+    (3200001, 6000000, 40),
+    (6000001, float("inf"), 42),
+]
+
+MODE_LABELS = {"individual": "الفردية", "team": "الفريق"}
+
+def points_for(n: int, mode: str = "individual") -> int:
+    tiers = TIERS_TEAM if mode == "team" else TIERS_INDIVIDUAL
+    for lo, hi, pts in tiers:
         if lo <= n <= hi:
             return pts
     return 0
@@ -79,10 +98,17 @@ def parse_number(text: str):
 def fmt(x) -> str:
     return str(int(x)) if float(x) == int(x) else f"{x:.1f}"
 
-# ---------------- Keyboard ----------------
+# ---------------- Keyboards ----------------
+def menu_keyboard():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⚔️ معركة الشعبية الفردية", callback_data="battle_individual")
+    kb.button(text="👥 معركة الشعبية فريق", callback_data="battle_team")
+    kb.adjust(1)
+    return kb.as_markup()
+
 def result_keyboard():
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔄 معركة جديدة", callback_data="new_battle")
+    kb.button(text="🔄 معركة جديدة", callback_data="menu")
     kb.button(text="📜 سجلي", callback_data="show_history")
     kb.adjust(2)
     return kb.as_markup()
@@ -95,11 +121,21 @@ class BattleFSM(StatesGroup):
 dp = Dispatcher()
 bot = Bot(BOT_TOKEN)
 
-async def send_battle_start(message: Message, state: FSMContext):
+async def send_menu(message: Message, state: FSMContext = None):
+    if state:
+        await state.clear()
+    await message.answer(
+        "👋 أهلًا بك في حاسبة معركة الشعبية\n"
+        "اختر نوع المعركة:",
+        reply_markup=menu_keyboard(),
+    )
+
+async def send_battle_start(message: Message, state: FSMContext, mode: str):
     await state.clear()
     await state.set_state(BattleFSM.my_number)
+    await state.update_data(mode=mode)
     await message.answer(
-        "🔥 حاسبة معركة الشعبية الفردية\n"
+        f"🔥 معركة الشعبية - {MODE_LABELS.get(mode, '')}\n"
         "━━━━━━━━━━━━━━\n"
         "أرسل رقمك (الشعبية/المتابعين):\n\n"
         "للإلغاء في أي وقت: /cancel"
@@ -107,13 +143,33 @@ async def send_battle_start(message: Message, state: FSMContext):
 
 @dp.message(CommandStart())
 @dp.message(Command("battle"))
-async def start_battle(message: Message, state: FSMContext):
-    await send_battle_start(message, state)
+async def start_cmd(message: Message, state: FSMContext):
+    await send_menu(message, state)
 
 @dp.message(Command("cancel"))
 async def cancel(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("تم الإلغاء. أرسل /battle للبدء من جديد.")
+    await message.answer("تم الإلغاء. أرسل /start للبدء من جديد.")
+
+@dp.callback_query(F.data == "battle_individual")
+async def cb_individual(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await send_battle_start(callback.message, state, "individual")
+
+@dp.callback_query(F.data == "battle_team")
+async def cb_team(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await send_battle_start(callback.message, state, "team")
+
+@dp.callback_query(F.data == "menu")
+async def cb_menu(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await send_menu(callback.message, state)
+
+@dp.callback_query(F.data == "show_history")
+async def cb_history(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await show_history(callback.from_user.id, callback.message)
 
 @dp.message(StateFilter(BattleFSM.my_number))
 async def got_my_number(message: Message, state: FSMContext):
@@ -121,10 +177,12 @@ async def got_my_number(message: Message, state: FSMContext):
     if n is None:
         await message.answer("❌ أرسل رقمًا صحيحًا فقط (مثال: 100000).")
         return
+    data = await state.get_data()
+    mode = data.get("mode", "individual")
     await state.update_data(my_number=n)
     await state.set_state(BattleFSM.opp_number)
     await message.answer(
-        f"✅ رقمك: {n:,} = {points_for(n)} نقطة\n\n"
+        f"✅ رقمك: {n:,} = {points_for(n, mode)} نقطة\n\n"
         "الآن أرسل رقم الخصم:"
     )
 
@@ -135,12 +193,12 @@ async def got_opp_number(message: Message, state: FSMContext):
         await message.answer("❌ أرسل رقمًا صحيحًا فقط (مثال: 60000).")
         return
     data = await state.get_data()
+    mode = data.get("mode", "individual")
     my_number = data["my_number"]
 
-    my_points = points_for(my_number)
-    opp_points = points_for(opp_number)
+    my_points = points_for(my_number, mode)
+    opp_points = points_for(opp_number, mode)
 
-    # الفائز = صاحب الرقم الأكبر
     if my_number > opp_number:
         result_label = "فوز ✅"
         my_result = my_points + opp_points / 2
@@ -158,7 +216,7 @@ async def got_opp_number(message: Message, state: FSMContext):
         note = "تعادل: كل طرف يحتفظ بنقاطه كاملة"
 
     text = (
-        "🏆 نتيجة المعركة الفردية\n"
+        f"🏆 نتيجة معركة الشعبية {MODE_LABELS.get(mode, '')}\n"
         "━━━━━━━━━━━━━━\n"
         f"👤 نقاطك: {my_number:,}  →  {my_points} نقطة\n"
         f"🎯 نقاط الخصم: {opp_number:,}  →  {opp_points} نقطة\n"
@@ -170,10 +228,10 @@ async def got_opp_number(message: Message, state: FSMContext):
     )
     await message.answer(text, reply_markup=result_keyboard())
 
-    save_battle(message, my_number, my_points, opp_number, opp_points, result_label, my_result, opp_result)
+    save_battle(message, mode, my_number, my_points, opp_number, opp_points, result_label, my_result, opp_result)
     await state.clear()
 
-def save_battle(message, my_number, my_points, opp_number, opp_points, result_label, my_result, opp_result):
+def save_battle(message, mode, my_number, my_points, opp_number, opp_points, result_label, my_result, opp_result):
     if db is None:
         return
     try:
@@ -182,6 +240,7 @@ def save_battle(message, my_number, my_points, opp_number, opp_points, result_la
             "user_id": u.id,
             "username": u.username,
             "name": u.full_name,
+            "mode": mode,
             "my_number": my_number,
             "my_points": my_points,
             "opp_number": opp_number,
@@ -204,12 +263,13 @@ async def show_history(user_id: int, target: Message):
         rows.sort(key=lambda r: r.get("ts") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
         rows = rows[:5]
         if not rows:
-            await target.answer("📜 لا توجد نتائج محفوظة بعد. أرسل /battle.")
+            await target.answer("📜 لا توجد نتائج محفوظة بعد. أرسل /start.")
             return
         lines = ["📜 آخر 5 معارك لك:", "━━━━━━━━━━━━━━"]
         for i, r in enumerate(rows, 1):
+            tag = "فريق" if r.get("mode") == "team" else "فردي"
             lines.append(
-                f"{i}) {r.get('my_number', 0):,} ({r.get('my_points', 0)}ن) "
+                f"{i}) [{tag}] {r.get('my_number', 0):,} ({r.get('my_points', 0)}ن) "
                 f"ضد {r.get('opp_number', 0):,} ({r.get('opp_points', 0)}ن) "
                 f"→ {r.get('result', '?')} | لك {fmt(r.get('my_result', 0))}ن"
             )
@@ -222,19 +282,9 @@ async def show_history(user_id: int, target: Message):
 async def history_cmd(message: Message, state: FSMContext):
     await show_history(message.from_user.id, message)
 
-@dp.callback_query(F.data == "new_battle")
-async def cb_new_battle(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await send_battle_start(callback.message, state)
-
-@dp.callback_query(F.data == "show_history")
-async def cb_history(callback: CallbackQuery, state: FSMContext):
-    await callback.answer()
-    await show_history(callback.from_user.id, callback.message)
-
 @dp.message(StateFilter(None))
 async def fallback(message: Message):
-    await message.answer("👋 أرسل /battle لبدء حساب معركة الشعبية.")
+    await message.answer("👋 أرسل /start لاختيار نوع المعركة.")
 
 # ---------------- Webhook app ----------------
 async def on_startup() -> None:
