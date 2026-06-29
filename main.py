@@ -458,7 +458,7 @@ async def _handle_guest_text(message: Message):
     mode, my_number, opp_number = parsed
     logger.info("GUEST ok: mode=%s my=%s opp=%s", mode, my_number, opp_number)
     r = compute_battle(my_number, opp_number, mode)
-    await message.reply(r["text"])
+    await message.answer(r["text"])
     save_battle(message.from_user, mode, my_number, r["my_points"], opp_number,
                 r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="guest")
 
