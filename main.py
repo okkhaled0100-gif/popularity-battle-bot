@@ -1,4 +1,5 @@
 import os
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
@@ -287,9 +288,15 @@ async def fallback(message: Message):
     await message.answer("👋 أرسل /start لاختيار نوع المعركة.")
 
 # ---------------- Webhook app ----------------
+async def _set_webhook_bg() -> None:
+    try:
+        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+        logger.info("Webhook set to %s", WEBHOOK_URL)
+    except Exception as e:
+        logger.exception("set_webhook failed (service still running): %s", e)
+
 async def on_startup() -> None:
-    await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
-    logger.info("Webhook set to %s", WEBHOOK_URL)
+    asyncio.create_task(_set_webhook_bg())
 
 async def health(request):
     return web.Response(text="ok")
