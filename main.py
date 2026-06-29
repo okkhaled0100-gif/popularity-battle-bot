@@ -130,6 +130,12 @@ def history_picker_keyboard():
     kb.adjust(1)
     return kb.as_markup()
 
+def cancel_keyboard():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="❌ إلغاء", callback_data="cancel")
+    kb.adjust(1)
+    return kb.as_markup()
+
 # ---------------- FSM ----------------
 class BattleFSM(StatesGroup):
     my_number = State()
@@ -163,8 +169,8 @@ async def start_calc(message: Message, mode: str, state: FSMContext):
     await message.answer(
         f"🔥 معركة الشعبية - {MODE_LABELS.get(mode, '')}\n"
         "━━━━━━━━━━━━━━\n"
-        "أرسل رقمك (الشعبية/المتابعين):\n\n"
-        "للإلغاء في أي وقت: /cancel"
+        "أرسل عدد شعبيتك",
+        reply_markup=cancel_keyboard(),
     )
 
 @dp.message(CommandStart())
@@ -197,6 +203,12 @@ async def cb_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await send_menu(callback.message, state)
 
+@dp.callback_query(F.data == "cancel")
+async def cb_cancel(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+    await send_menu(callback.message, state)
+
 @dp.callback_query(F.data.startswith("calc:"))
 async def cb_calc(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
@@ -220,8 +232,9 @@ async def got_my_number(message: Message, state: FSMContext):
     await state.update_data(my_number=n)
     await state.set_state(BattleFSM.opp_number)
     await message.answer(
-        f"✅ رقمك: {n:,} = {points_for(n, mode)} نقطة\n\n"
-        "الآن أرسل رقم الخصم:"
+        f"✅ شعبيتك: {n:,} = {points_for(n, mode)} نقطة\n\n"
+        "الآن أرسل عدد شعبية الخصم:",
+        reply_markup=cancel_keyboard(),
     )
 
 @dp.message(StateFilter(BattleFSM.opp_number))
