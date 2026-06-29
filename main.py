@@ -107,11 +107,27 @@ def menu_keyboard():
     kb.adjust(1)
     return kb.as_markup()
 
-def result_keyboard():
+def landing_keyboard(mode: str):
     kb = InlineKeyboardBuilder()
-    kb.button(text="🔄 معركة جديدة", callback_data="menu")
-    kb.button(text="📜 سجلي", callback_data="show_history")
-    kb.adjust(2)
+    kb.button(text="📜 سجلي", callback_data=f"hist:{mode}")
+    kb.button(text="▶️ ابدأ الحسبة", callback_data=f"calc:{mode}")
+    kb.button(text="🔙 رجوع", callback_data="menu")
+    kb.adjust(2, 1)
+    return kb.as_markup()
+
+def result_keyboard(mode: str):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="🔄 معركة جديدة", callback_data=f"calc:{mode}")
+    kb.button(text="📜 سجلي", callback_data=f"hist:{mode}")
+    kb.button(text="🔙 القائمة", callback_data="menu")
+    kb.adjust(2, 1)
+    return kb.as_markup()
+
+def history_picker_keyboard():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📜 سجل الفردية", callback_data="hist:individual")
+    kb.button(text="📜 سجل الفريق", callback_data="hist:team")
+    kb.adjust(1)
     return kb.as_markup()
 
 # ---------------- FSM ----------------
@@ -131,7 +147,16 @@ async def send_menu(message: Message, state: FSMContext = None):
         reply_markup=menu_keyboard(),
     )
 
-async def send_battle_start(message: Message, state: FSMContext, mode: str):
+async def send_landing(message: Message, mode: str, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        f"🔥 معركة الشعبية - {MODE_LABELS.get(mode, '')}\n"
+        "━━━━━━━━━━━━━━\n"
+        "اختر من الأزرار:",
+        reply_markup=landing_keyboard(mode),
+    )
+
+async def start_calc(message: Message, mode: str, state: FSMContext):
     await state.clear()
     await state.set_state(BattleFSM.my_number)
     await state.update_data(mode=mode)
@@ -147,6 +172,11 @@ async def send_battle_start(message: Message, state: FSMContext, mode: str):
 async def start_cmd(message: Message, state: FSMContext):
     await send_menu(message, state)
 
+@dp.message(Command("history"))
+async def history_cmd(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("اختر السجل:", reply_markup=history_picker_keyboard())
+
 @dp.message(Command("cancel"))
 async def cancel(message: Message, state: FSMContext):
     await state.clear()
@@ -155,22 +185,29 @@ async def cancel(message: Message, state: FSMContext):
 @dp.callback_query(F.data == "battle_individual")
 async def cb_individual(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await send_battle_start(callback.message, state, "individual")
+    await send_landing(callback.message, "individual", state)
 
 @dp.callback_query(F.data == "battle_team")
 async def cb_team(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await send_battle_start(callback.message, state, "team")
+    await send_landing(callback.message, "team", state)
 
 @dp.callback_query(F.data == "menu")
 async def cb_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await send_menu(callback.message, state)
 
-@dp.callback_query(F.data == "show_history")
-async def cb_history(callback: CallbackQuery, state: FSMContext):
+@dp.callback_query(F.data.startswith("calc:"))
+async def cb_calc(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await show_history(callback.from_user.id, callback.message)
+    mode = callback.data.split(":", 1)[1]
+    await start_calc(callback.message, mode, state)
+
+@dp.callback_query(F.data.startswith("hist:"))
+async def cb_hist(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    mode = callback.data.split(":", 1)[1]
+    await show_history(callback.from_user.id, callback.message, mode)
 
 @dp.message(StateFilter(BattleFSM.my_number))
 async def got_my_number(message: Message, state: FSMContext):
@@ -227,7 +264,7 @@ async def got_opp_number(message: Message, state: FSMContext):
         f"    نقاط الخصم : {fmt(opp_result)} نقطة\n"
         f" {note}"
     )
-    await message.answer(text, reply_markup=result_keyboard())
+    await message.answer(text, reply_markup=result_keyboard(mode))
 
     save_battle(message, mode, my_number, my_points, opp_number, opp_points, result_label, my_result, opp_result)
     await state.clear()
@@ -254,23 +291,24 @@ def save_battle(message, mode, my_number, my_points, opp_number, opp_points, res
     except Exception as e:
         logger.exception("Firestore save failed: %s", e)
 
-async def show_history(user_id: int, target: Message):
+async def show_history(user_id: int, target: Message, mode: str):
+    label = MODE_LABELS.get(mode, "")
     if db is None:
         await target.answer("📜 التخزين غير مفعّل حاليًا.")
         return
     try:
-        docs = list(db.collection("battles").where("user_id", "==", user_id).limit(20).stream())
+        docs = list(db.collection("battles").where("user_id", "==", user_id).limit(100).stream())
         rows = [d.to_dict() for d in docs]
+        rows = [r for r in rows if r.get("mode") == mode]
         rows.sort(key=lambda r: r.get("ts") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
         rows = rows[:5]
         if not rows:
-            await target.answer("📜 لا توجد نتائج محفوظة بعد. أرسل /start.")
+            await target.answer(f"📜 لا توجد نتائج في سجل {label} بعد.")
             return
-        lines = ["📜 آخر 5 معارك لك:", "━━━━━━━━━━━━━━"]
+        lines = [f"📜 آخر 5 معارك - {label}:", "━━━━━━━━━━━━━━"]
         for i, r in enumerate(rows, 1):
-            tag = "فريق" if r.get("mode") == "team" else "فردي"
             lines.append(
-                f"{i}) [{tag}] {r.get('my_number', 0):,} ({r.get('my_points', 0)}ن) "
+                f"{i}) {r.get('my_number', 0):,} ({r.get('my_points', 0)}ن) "
                 f"ضد {r.get('opp_number', 0):,} ({r.get('opp_points', 0)}ن) "
                 f"→ {r.get('result', '?')} | لك {fmt(r.get('my_result', 0))}ن"
             )
@@ -278,10 +316,6 @@ async def show_history(user_id: int, target: Message):
     except Exception as e:
         logger.exception("history failed: %s", e)
         await target.answer("⚠️ تعذّر جلب السجل الآن.")
-
-@dp.message(Command("history"))
-async def history_cmd(message: Message, state: FSMContext):
-    await show_history(message.from_user.id, message)
 
 @dp.message(StateFilter(None))
 async def fallback(message: Message):
