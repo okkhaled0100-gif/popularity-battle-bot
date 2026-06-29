@@ -203,15 +203,6 @@ def cancel_keyboard():
     kb.adjust(1)
     return kb.as_markup()
 
-def inline_help_keyboard():
-    if not BOT_USERNAME:
-        return None
-    kb = InlineKeyboardBuilder()
-    kb.button(text="⚔️ معركة شعبية الفردية", url=f"https://t.me/{BOT_USERNAME}?start=individual")
-    kb.button(text="👥 معركة شعبية الفريق", url=f"https://t.me/{BOT_USERNAME}?start=team")
-    kb.adjust(1)
-    return kb.as_markup()
-
 # ---------------- FSM ----------------
 class BattleFSM(StatesGroup):
     my_number = State()
@@ -219,6 +210,16 @@ class BattleFSM(StatesGroup):
 
 dp = Dispatcher()
 bot = Bot(BOT_TOKEN)
+
+INLINE_HELP_TEXT = (
+    "🔥 حاسبة معركة الشعبية\n"
+    "━━━━━━━━━━━━━━\n"
+    "احسب نتيجة معركتك في أي محادثة:\n\n"
+    "• الفردية: اكتب يوزر البوت ثم رقمك ورقم الخصم\n"
+    "  مثال: 1200000 900000\n"
+    "• الفريق: أضف كلمة (فريق) قبل الرقمين\n"
+    "  مثال: فريق 1200000 900000"
+)
 
 async def send_menu(message: Message, state: FSMContext = None):
     if state:
@@ -338,24 +339,12 @@ async def got_opp_number(message: Message, state: FSMContext):
     await state.clear()
 
 # ---------------- Online (inline) ----------------
-INLINE_HELP_TEXT = (
-    "🔥 حاسبة معركة الشعبية\n"
-    "━━━━━━━━━━━━━━\n"
-    "احسب نتيجة معركتك في أي محادثة:\n\n"
-    "• الفردية: اكتب يوزر البوت ثم رقمك ورقم الخصم\n"
-    "  مثال: 1200000 900000\n"
-    "• الفريق: أضف كلمة (فريق) قبل الرقمين\n"
-    "  مثال: فريق 1200000 900000\n\n"
-    "أو اختر نوع المعركة من الأزرار 👇"
-)
-
 @dp.inline_query()
 async def inline_battle(query: InlineQuery):
     parsed = parse_inline(query.query or "")
     if parsed is None:
         await query.answer([], cache_time=1, is_personal=True)
         return
-
     mode, my_number, opp_number = parsed
     r = compute_battle(my_number, opp_number, mode)
     article = InlineQueryResultArticle(
@@ -376,6 +365,37 @@ async def online_chosen(chosen: ChosenInlineResult):
     r = compute_battle(my_number, opp_number, mode)
     save_battle(chosen.from_user, mode, my_number, r["my_points"], opp_number,
                 r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="online")
+
+# ---------------- Guest Mode ----------------
+@dp.guest_message()
+async def guest_message_handler(message: Message):
+    text = message.text or ""
+    if BOT_USERNAME:
+        text = " ".join(t for t in text.split() if not t.startswith("@"))
+    parsed = parse_inline(text)
+
+    if parsed is None:
+        article = InlineQueryResultArticle(
+            id="guest_help",
+            title="🔥 حاسبة معركة الشعبية",
+            description="اكتب رقمين بعد اسم البوت — أو أضف (فريق)",
+            input_message_content=InputTextMessageContent(message_text=INLINE_HELP_TEXT),
+        )
+        await message.answer_guest_query(result=article)
+        return
+
+    mode, my_number, opp_number = parsed
+    r = compute_battle(my_number, opp_number, mode)
+    article = InlineQueryResultArticle(
+        id=f"{mode}|{my_number}|{opp_number}",
+        title=f"{MODE_LABELS[mode]}: {my_number:,} ضد {opp_number:,}",
+        description=f"النتيجة: {r['result_label']}",
+        input_message_content=InputTextMessageContent(message_text=r["text"]),
+    )
+    await message.answer_guest_query(result=article)
+    if message.from_user:
+        save_battle(message.from_user, mode, my_number, r["my_points"], opp_number,
+                    r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="guest")
 
 # ---------------- Storage ----------------
 def save_battle(user, mode, my_number, my_points, opp_number, opp_points,
@@ -431,30 +451,6 @@ async def show_history(user_id: int, target: Message, mode: str):
     except Exception as e:
         logger.exception("history failed: %s", e)
         await target.answer("⚠️ تعذّر جلب السجل الآن.")
-
-@dp.message(F.chat.type.in_({"group", "supergroup"}), F.text)
-async def guest_mention(message: Message, state: FSMContext):
-    await _handle_guest_text(message)
-
-@dp.guest_message()
-async def guest_message_handler(message: Message):
-    await _handle_guest_text(message)
-
-async def _handle_guest_text(message: Message):
-    if not BOT_USERNAME:
-        return
-    text = message.text or ""
-    if f"@{BOT_USERNAME}".lower() not in text.lower():
-        return
-    tokens = [t for t in text.split() if not t.startswith("@")]
-    parsed = parse_inline(" ".join(tokens))
-    if parsed is None:
-        return  # silent: don't spam the group
-    mode, my_number, opp_number = parsed
-    r = compute_battle(my_number, opp_number, mode)
-    await message.answer(r["text"])
-    save_battle(message.from_user, mode, my_number, r["my_points"], opp_number,
-                r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="guest")
 
 @dp.message(StateFilter(None), F.chat.type == "private")
 async def fallback(message: Message):
