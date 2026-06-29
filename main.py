@@ -184,9 +184,8 @@ def help_text():
 
 def help_keyboard():
     kb = InlineKeyboardBuilder()
-    if BOT_USERNAME:
-        kb.button(text="⚔️ معركة الشعبية الفردية", url=f"https://t.me/{BOT_USERNAME}?start=individual")
-        kb.button(text="👥 معركة الشعبية فريق", url=f"https://t.me/{BOT_USERNAME}?start=team")
+    kb.button(text="⚔️ معركة الشعبية الفردية", switch_inline_query_current_chat="")
+    kb.button(text="👥 معركة الشعبية فريق", switch_inline_query_current_chat="فريق ")
     kb.button(text="🙈 إخفاء الشرح", callback_data="hide_help")
     kb.adjust(2, 1)
     return kb.as_markup()
