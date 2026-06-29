@@ -254,7 +254,7 @@ async def got_opp_number(message: Message, state: FSMContext):
         result_label = "فوز ✅"
         my_result = my_points + opp_points / 2
         opp_result = opp_points / 2
-        note = "في حال الفوز تأخذ + نصف نقاط الخصم"
+        note = "في حال الفوز تأخذ نصف نقاط الخصم"
     elif my_number < opp_number:
         result_label = "خسارة ❌"
         my_result = my_points / 2
