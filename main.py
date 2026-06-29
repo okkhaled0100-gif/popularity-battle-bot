@@ -184,8 +184,8 @@ def help_text():
 
 def help_keyboard():
     kb = InlineKeyboardBuilder()
-    kb.button(text="⚔️ معركة الشعبية الفردية", switch_inline_query_current_chat="")
-    kb.button(text="👥 معركة الشعبية فريق", switch_inline_query_current_chat="فريق ")
+    kb.button(text="⚔️ معركة الشعبية الفردية", switch_inline_query_current_chat="1200000 900000")
+    kb.button(text="👥 معركة الشعبية فريق", switch_inline_query_current_chat="فريق 1200000 900000")
     kb.button(text="🙈 إخفاء الشرح", callback_data="hide_help")
     kb.adjust(2, 1)
     return kb.as_markup()
