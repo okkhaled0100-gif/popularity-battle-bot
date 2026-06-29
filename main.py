@@ -441,16 +441,22 @@ async def guest_message_handler(message: Message):
     await _handle_guest_text(message)
 
 async def _handle_guest_text(message: Message):
+    logger.info("GUEST update received: chat_type=%s text=%r username=%s",
+                getattr(message.chat, "type", None), message.text, BOT_USERNAME)
     if not BOT_USERNAME:
+        logger.info("GUEST skip: BOT_USERNAME is empty")
         return
     text = message.text or ""
     if f"@{BOT_USERNAME}".lower() not in text.lower():
+        logger.info("GUEST skip: bot not mentioned in text")
         return
     tokens = [t for t in text.split() if not t.startswith("@")]
     parsed = parse_inline(" ".join(tokens))
     if parsed is None:
+        logger.info("GUEST skip: parse failed for tokens=%r", tokens)
         return  # silent: don't spam the group
     mode, my_number, opp_number = parsed
+    logger.info("GUEST ok: mode=%s my=%s opp=%s", mode, my_number, opp_number)
     r = compute_battle(my_number, opp_number, mode)
     await message.reply(r["text"])
     save_battle(message.from_user, mode, my_number, r["my_points"], opp_number,
