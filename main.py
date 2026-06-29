@@ -353,14 +353,7 @@ INLINE_HELP_TEXT = (
 async def inline_battle(query: InlineQuery):
     parsed = parse_inline(query.query or "")
     if parsed is None:
-        article = InlineQueryResultArticle(
-            id="help",
-            title="🔥 حاسبة معركة الشعبية",
-            description="اكتب رقمين للحساب، أو اختر نوع المعركة",
-            input_message_content=InputTextMessageContent(message_text=INLINE_HELP_TEXT),
-            reply_markup=inline_help_keyboard(),
-        )
-        await query.answer([article], cache_time=1, is_personal=True)
+        await query.answer([], cache_time=1, is_personal=True)
         return
 
     mode, my_number, opp_number = parsed
