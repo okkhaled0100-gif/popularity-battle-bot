@@ -8,7 +8,14 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import (
+    Message,
+    CallbackQuery,
+    InlineQuery,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+    ChosenInlineResult,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp import web
@@ -76,6 +83,7 @@ TIERS_TEAM = [
 ]
 
 MODE_LABELS = {"individual": "الفردية", "team": "الفريق"}
+TEAM_WORDS = {"فريق", "الفريق", "team", "Team", "TEAM"}
 
 def points_for(n: int, mode: str = "individual") -> int:
     tiers = TIERS_TEAM if mode == "team" else TIERS_INDIVIDUAL
@@ -96,8 +104,66 @@ def parse_number(text: str):
         return None
     return int(t)
 
+def parse_inline(text: str):
+    if not text:
+        return None
+    t = text.translate(str.maketrans(ARABIC_DIGITS, WESTERN_DIGITS)).replace(",", "").replace("،", "")
+    mode = "individual"
+    nums = []
+    for tok in t.split():
+        if tok in TEAM_WORDS:
+            mode = "team"
+        elif tok.isdigit():
+            nums.append(int(tok))
+        else:
+            return None
+    if len(nums) != 2:
+        return None
+    return mode, nums[0], nums[1]
+
 def fmt(x) -> str:
     return str(int(x)) if float(x) == int(x) else f"{x:.1f}"
+
+# ---------------- Core compute ----------------
+def compute_battle(my_number: int, opp_number: int, mode: str):
+    my_points = points_for(my_number, mode)
+    opp_points = points_for(opp_number, mode)
+
+    if my_number > opp_number:
+        result_label = "فوز ✅"
+        my_result = my_points + opp_points / 2
+        opp_result = opp_points / 2
+        note = "في حال الفوز تأخذ نصف نقاط الخصم"
+    elif my_number < opp_number:
+        result_label = "خسارة ❌"
+        my_result = my_points / 2
+        opp_result = opp_points + my_points / 2
+        note = "في حال الخسارة تأخذ نصف نقاطك فقط"
+    else:
+        result_label = "تعادل 🤝"
+        my_result = my_points
+        opp_result = opp_points
+        note = "تعادل: كل طرف يحتفظ بنقاطه كاملة"
+
+    text = (
+        f"🏆 نتيجة معركة الشعبية {MODE_LABELS.get(mode, '')}\n"
+        "━━━━━━━━━━━━━━\n"
+        f"👤 نقاطك: {my_number:,}  →  {my_points} نقطة\n"
+        f"🎯 نقاط الخصم: {opp_number:,}  →  {opp_points} نقطة\n"
+        "━━━━━━━━━━━━━━\n"
+        f"النتيجة : {result_label}\n"
+        f"     نقاطك : {fmt(my_result)} نقطة\n"
+        f"    نقاط الخصم : {fmt(opp_result)} نقطة\n"
+        f" {note}"
+    )
+    return {
+        "text": text,
+        "my_points": my_points,
+        "opp_points": opp_points,
+        "result_label": result_label,
+        "my_result": my_result,
+        "opp_result": opp_result,
+    }
 
 # ---------------- Keyboards ----------------
 def menu_keyboard():
@@ -246,52 +312,61 @@ async def got_opp_number(message: Message, state: FSMContext):
     data = await state.get_data()
     mode = data.get("mode", "individual")
     my_number = data["my_number"]
-
-    my_points = points_for(my_number, mode)
-    opp_points = points_for(opp_number, mode)
-
-    if my_number > opp_number:
-        result_label = "فوز ✅"
-        my_result = my_points + opp_points / 2
-        opp_result = opp_points / 2
-        note = "في حال الفوز تأخذ نصف نقاط الخصم"
-    elif my_number < opp_number:
-        result_label = "خسارة ❌"
-        my_result = my_points / 2
-        opp_result = opp_points + my_points / 2
-        note = "في حال الخسارة تأخذ نصف نقاطك فقط"
-    else:
-        result_label = "تعادل 🤝"
-        my_result = my_points
-        opp_result = opp_points
-        note = "تعادل: كل طرف يحتفظ بنقاطه كاملة"
-
-    text = (
-        f"🏆 نتيجة معركة الشعبية {MODE_LABELS.get(mode, '')}\n"
-        "━━━━━━━━━━━━━━\n"
-        f"👤 نقاطك: {my_number:,}  →  {my_points} نقطة\n"
-        f"🎯 نقاط الخصم: {opp_number:,}  →  {opp_points} نقطة\n"
-        "━━━━━━━━━━━━━━\n"
-        f"النتيجة : {result_label}\n"
-        f"     نقاطك : {fmt(my_result)} نقطة\n"
-        f"    نقاط الخصم : {fmt(opp_result)} نقطة\n"
-        f" {note}"
-    )
-    await message.answer(text, reply_markup=result_keyboard(mode))
-
-    save_battle(message, mode, my_number, my_points, opp_number, opp_points, result_label, my_result, opp_result)
+    r = compute_battle(my_number, opp_number, mode)
+    await message.answer(r["text"], reply_markup=result_keyboard(mode))
+    save_battle(message.from_user, mode, my_number, r["my_points"], opp_number,
+                r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="calc")
     await state.clear()
 
-def save_battle(message, mode, my_number, my_points, opp_number, opp_points, result_label, my_result, opp_result):
+# ---------------- Online (inline) ----------------
+@dp.inline_query()
+async def inline_battle(query: InlineQuery):
+    parsed = parse_inline(query.query or "")
+    if parsed is None:
+        article = InlineQueryResultArticle(
+            id="help",
+            title="اكتب رقمين (وأضف 'فريق' للوضع الجماعي)",
+            description="مثال: 1200000 900000  •  فريق 1200000 900000",
+            input_message_content=InputTextMessageContent(
+                message_text="🔥 حاسبة معركة الشعبية\nالاستخدام: رقمك ثم رقم الخصم\nمثال: 1200000 900000\nللفريق: فريق 1200000 900000"
+            ),
+        )
+        await query.answer([article], cache_time=1, is_personal=True)
+        return
+
+    mode, my_number, opp_number = parsed
+    r = compute_battle(my_number, opp_number, mode)
+    article = InlineQueryResultArticle(
+        id=f"{mode}|{my_number}|{opp_number}",
+        title=f"{MODE_LABELS[mode]}: {my_number:,} ضد {opp_number:,}",
+        description=f"النتيجة: {r['result_label']} — اضغط للإرسال",
+        input_message_content=InputTextMessageContent(message_text=r["text"]),
+    )
+    await query.answer([article], cache_time=1, is_personal=True)
+
+@dp.chosen_inline_result()
+async def online_chosen(chosen: ChosenInlineResult):
+    try:
+        mode, my_s, opp_s = chosen.result_id.split("|")
+        my_number, opp_number = int(my_s), int(opp_s)
+    except Exception:
+        return
+    r = compute_battle(my_number, opp_number, mode)
+    save_battle(chosen.from_user, mode, my_number, r["my_points"], opp_number,
+                r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="online")
+
+# ---------------- Storage ----------------
+def save_battle(user, mode, my_number, my_points, opp_number, opp_points,
+                result_label, my_result, opp_result, source="calc"):
     if db is None:
         return
     try:
-        u = message.from_user
         db.collection("battles").add({
-            "user_id": u.id,
-            "username": u.username,
-            "name": u.full_name,
+            "user_id": user.id,
+            "username": user.username,
+            "name": user.full_name,
             "mode": mode,
+            "source": source,
             "my_number": my_number,
             "my_points": my_points,
             "opp_number": opp_number,
@@ -342,7 +417,11 @@ async def fallback(message: Message):
 # ---------------- Webhook app ----------------
 async def _set_webhook_bg() -> None:
     try:
-        await bot.set_webhook(WEBHOOK_URL, drop_pending_updates=True)
+        await bot.set_webhook(
+            WEBHOOK_URL,
+            drop_pending_updates=True,
+            allowed_updates=["message", "callback_query", "inline_query", "chosen_inline_result"],
+        )
         logger.info("Webhook set to %s", WEBHOOK_URL)
     except Exception as e:
         logger.exception("set_webhook failed (service still running): %s", e)
