@@ -432,7 +432,24 @@ async def show_history(user_id: int, target: Message, mode: str):
         logger.exception("history failed: %s", e)
         await target.answer("⚠️ تعذّر جلب السجل الآن.")
 
-@dp.message(StateFilter(None))
+@dp.message(F.chat.type.in_({"group", "supergroup"}), F.text)
+async def guest_mention(message: Message, state: FSMContext):
+    if not BOT_USERNAME:
+        return
+    text = message.text or ""
+    if f"@{BOT_USERNAME}".lower() not in text.lower():
+        return
+    tokens = [t for t in text.split() if not t.startswith("@")]
+    parsed = parse_inline(" ".join(tokens))
+    if parsed is None:
+        return  # silent: don't spam the group
+    mode, my_number, opp_number = parsed
+    r = compute_battle(my_number, opp_number, mode)
+    await message.reply(r["text"])
+    save_battle(message.from_user, mode, my_number, r["my_points"], opp_number,
+                r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="guest")
+
+@dp.message(StateFilter(None), F.chat.type == "private")
 async def fallback(message: Message):
     await message.answer("👋 أرسل /start لاختيار نوع المعركة.")
 
