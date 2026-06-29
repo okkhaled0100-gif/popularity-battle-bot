@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 
 from aiogram import Bot, Dispatcher, F
-from aiogram.filters import Command, CommandStart, StateFilter
+from aiogram.filters import Command, CommandStart, CommandObject, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import (
@@ -49,6 +49,7 @@ def init_firestore():
         return None
 
 db = init_firestore()
+BOT_USERNAME = None
 
 # ---------------- Points tables ----------------
 TIERS_INDIVIDUAL = [
@@ -202,6 +203,15 @@ def cancel_keyboard():
     kb.adjust(1)
     return kb.as_markup()
 
+def inline_help_keyboard():
+    if not BOT_USERNAME:
+        return None
+    kb = InlineKeyboardBuilder()
+    kb.button(text="⚔️ معركة شعبية الفردية", url=f"https://t.me/{BOT_USERNAME}?start=individual")
+    kb.button(text="👥 معركة شعبية الفريق", url=f"https://t.me/{BOT_USERNAME}?start=team")
+    kb.adjust(1)
+    return kb.as_markup()
+
 # ---------------- FSM ----------------
 class BattleFSM(StatesGroup):
     my_number = State()
@@ -240,8 +250,17 @@ async def start_calc(message: Message, mode: str, state: FSMContext):
     )
 
 @dp.message(CommandStart())
+async def start_cmd(message: Message, state: FSMContext, command: CommandObject = None):
+    arg = (command.args or "").strip() if command else ""
+    if arg == "team":
+        await send_landing(message, "team", state)
+    elif arg == "individual":
+        await send_landing(message, "individual", state)
+    else:
+        await send_menu(message, state)
+
 @dp.message(Command("battle"))
-async def start_cmd(message: Message, state: FSMContext):
+async def battle_cmd(message: Message, state: FSMContext):
     await send_menu(message, state)
 
 @dp.message(Command("history"))
@@ -319,17 +338,27 @@ async def got_opp_number(message: Message, state: FSMContext):
     await state.clear()
 
 # ---------------- Online (inline) ----------------
+INLINE_HELP_TEXT = (
+    "🔥 حاسبة معركة الشعبية\n"
+    "━━━━━━━━━━━━━━\n"
+    "احسب نتيجة معركتك في أي محادثة:\n\n"
+    "• الفردية: اكتب يوزر البوت ثم رقمك ورقم الخصم\n"
+    "  مثال: 1200000 900000\n"
+    "• الفريق: أضف كلمة (فريق) قبل الرقمين\n"
+    "  مثال: فريق 1200000 900000\n\n"
+    "أو اختر نوع المعركة من الأزرار 👇"
+)
+
 @dp.inline_query()
 async def inline_battle(query: InlineQuery):
     parsed = parse_inline(query.query or "")
     if parsed is None:
         article = InlineQueryResultArticle(
             id="help",
-            title="اكتب رقمين (وأضف 'فريق' للوضع الجماعي)",
-            description="مثال: 1200000 900000  •  فريق 1200000 900000",
-            input_message_content=InputTextMessageContent(
-                message_text="🔥 حاسبة معركة الشعبية\nالاستخدام: رقمك ثم رقم الخصم\nمثال: 1200000 900000\nللفريق: فريق 1200000 900000"
-            ),
+            title="🔥 حاسبة معركة الشعبية",
+            description="اكتب رقمين للحساب، أو اختر نوع المعركة",
+            input_message_content=InputTextMessageContent(message_text=INLINE_HELP_TEXT),
+            reply_markup=inline_help_keyboard(),
         )
         await query.answer([article], cache_time=1, is_personal=True)
         return
@@ -415,7 +444,14 @@ async def fallback(message: Message):
     await message.answer("👋 أرسل /start لاختيار نوع المعركة.")
 
 # ---------------- Webhook app ----------------
-async def _set_webhook_bg() -> None:
+async def _startup_bg() -> None:
+    global BOT_USERNAME
+    try:
+        me = await bot.get_me()
+        BOT_USERNAME = me.username
+        logger.info("Bot username: @%s", BOT_USERNAME)
+    except Exception as e:
+        logger.exception("get_me failed: %s", e)
     try:
         await bot.set_webhook(
             WEBHOOK_URL,
@@ -427,7 +463,7 @@ async def _set_webhook_bg() -> None:
         logger.exception("set_webhook failed (service still running): %s", e)
 
 async def on_startup() -> None:
-    asyncio.create_task(_set_webhook_bg())
+    asyncio.create_task(_startup_bg())
 
 async def health(request):
     return web.Response(text="ok")
