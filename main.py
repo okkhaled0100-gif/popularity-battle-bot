@@ -434,6 +434,13 @@ async def show_history(user_id: int, target: Message, mode: str):
 
 @dp.message(F.chat.type.in_({"group", "supergroup"}), F.text)
 async def guest_mention(message: Message, state: FSMContext):
+    await _handle_guest_text(message)
+
+@dp.guest_message()
+async def guest_message_handler(message: Message):
+    await _handle_guest_text(message)
+
+async def _handle_guest_text(message: Message):
     if not BOT_USERNAME:
         return
     text = message.text or ""
@@ -466,7 +473,7 @@ async def _startup_bg() -> None:
         await bot.set_webhook(
             WEBHOOK_URL,
             drop_pending_updates=True,
-            allowed_updates=["message", "callback_query", "inline_query", "chosen_inline_result"],
+            allowed_updates=["message", "callback_query", "inline_query", "chosen_inline_result", "guest_message"],
         )
         logger.info("Webhook set to %s", WEBHOOK_URL)
     except Exception as e:
