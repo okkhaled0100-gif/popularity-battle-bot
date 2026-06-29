@@ -166,7 +166,31 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
         "opp_result": opp_result,
     }
 
-# ---------------- Keyboards ----------------
+# ---------------- Help text + keyboards ----------------
+HELP_TEMPLATE = (
+    "🔥 حاسبة معركة الشعبية - طريقة الاستخدام\n"
+    "━━━━━━━━━━━━━━\n"
+    "احسب نتيجة معركتك في أي محادثة بذكر البوت:\n\n"
+    "• فردية: اكتب يوزر البوت ثم رقمك ثم رقم الخصم\n"
+    "   مثال: @{u} 1200000 900000\n\n"
+    "• فريق: أضف كلمة (فريق) قبل الرقمين\n"
+    "   مثال: @{u} فريق 1200000 900000\n\n"
+    "ℹ️ الأكبر يفوز، والنتيجة تُحسب بنقاط كل طرف.\n"
+    "أو افتح البوت من الأزرار 👇"
+)
+
+def help_text():
+    return HELP_TEMPLATE.format(u=BOT_USERNAME or "اسم_البوت")
+
+def help_keyboard():
+    kb = InlineKeyboardBuilder()
+    if BOT_USERNAME:
+        kb.button(text="⚔️ معركة الشعبية الفردية", url=f"https://t.me/{BOT_USERNAME}?start=individual")
+        kb.button(text="👥 معركة الشعبية فريق", url=f"https://t.me/{BOT_USERNAME}?start=team")
+    kb.button(text="🙈 إخفاء الشرح", callback_data="hide_help")
+    kb.adjust(2, 1)
+    return kb.as_markup()
+
 def menu_keyboard():
     kb = InlineKeyboardBuilder()
     kb.button(text="⚔️ معركة الشعبية الفردية", callback_data="battle_individual")
@@ -210,16 +234,6 @@ class BattleFSM(StatesGroup):
 
 dp = Dispatcher()
 bot = Bot(BOT_TOKEN)
-
-INLINE_HELP_TEXT = (
-    "🔥 حاسبة معركة الشعبية\n"
-    "━━━━━━━━━━━━━━\n"
-    "احسب نتيجة معركتك في أي محادثة:\n\n"
-    "• الفردية: اكتب يوزر البوت ثم رقمك ورقم الخصم\n"
-    "  مثال: 1200000 900000\n"
-    "• الفريق: أضف كلمة (فريق) قبل الرقمين\n"
-    "  مثال: فريق 1200000 900000"
-)
 
 async def send_menu(message: Message, state: FSMContext = None):
     if state:
@@ -294,6 +308,20 @@ async def cb_cancel(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await state.clear()
     await send_menu(callback.message, state)
+
+@dp.callback_query(F.data == "hide_help")
+async def cb_hide_help(callback: CallbackQuery):
+    await callback.answer("تم إخفاء الشرح")
+    try:
+        if callback.inline_message_id:
+            await bot.edit_message_text(
+                inline_message_id=callback.inline_message_id,
+                text="🔥 حاسبة معركة الشعبية",
+            )
+        elif callback.message:
+            await callback.message.edit_text("🔥 حاسبة معركة الشعبية")
+    except Exception as e:
+        logger.exception("hide_help failed: %s", e)
 
 @dp.callback_query(F.data.startswith("calc:"))
 async def cb_calc(callback: CallbackQuery, state: FSMContext):
@@ -370,16 +398,16 @@ async def online_chosen(chosen: ChosenInlineResult):
 @dp.guest_message()
 async def guest_message_handler(message: Message):
     text = message.text or ""
-    if BOT_USERNAME:
-        text = " ".join(t for t in text.split() if not t.startswith("@"))
+    text = " ".join(t for t in text.split() if not t.startswith("@"))
     parsed = parse_inline(text)
 
     if parsed is None:
         article = InlineQueryResultArticle(
             id="guest_help",
-            title="🔥 حاسبة معركة الشعبية",
-            description="اكتب رقمين بعد اسم البوت — أو أضف (فريق)",
-            input_message_content=InputTextMessageContent(message_text=INLINE_HELP_TEXT),
+            title="🔥 حاسبة معركة الشعبية - الشرح",
+            description="طريقة الاستخدام + أزرار",
+            input_message_content=InputTextMessageContent(message_text=help_text()),
+            reply_markup=help_keyboard(),
         )
         await message.answer_guest_query(result=article)
         return
