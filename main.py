@@ -305,13 +305,18 @@ async def show_history(user_id: int, target: Message, mode: str):
         if not rows:
             await target.answer(f"📜 لا توجد نتائج في سجل {label} بعد.")
             return
-        lines = [f"📜 آخر 5 معارك - {label}:", "━━━━━━━━━━━━━━"]
+        sep = "━━━━━━━━━━━━━━"
+        lines = [f"📜 آخر 5 معارك - {label}:", sep]
         for i, r in enumerate(rows, 1):
+            res = r.get("result", "?").replace("✅", "").replace("❌", "").replace("🤝", "").strip()
             lines.append(
-                f"{i}) {r.get('my_number', 0):,} ({r.get('my_points', 0)}ن) "
-                f"ضد {r.get('opp_number', 0):,} ({r.get('opp_points', 0)}ن) "
-                f"→ {r.get('result', '?')} | لك {fmt(r.get('my_result', 0))}ن"
+                f"{i}- النتيجة: {res}\n"
+                f"دعمي : {r.get('my_number', 0):,} ({r.get('my_points', 0)}نقطة)\n"
+                f"دعم خصمي : {r.get('opp_number', 0):,} ({r.get('opp_points', 0)}نقطة)\n"
+                f"نقاطي : {fmt(r.get('my_result', 0))} نقطة\n"
+                f"نقاط الخصم : {fmt(r.get('opp_result', 0))} نقطة"
             )
+            lines.append(sep)
         await target.answer("\n".join(lines))
     except Exception as e:
         logger.exception("history failed: %s", e)
