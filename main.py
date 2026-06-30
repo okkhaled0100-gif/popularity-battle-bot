@@ -208,7 +208,8 @@ HELP_TEMPLATE = (
     "• فردية: اكتب يوزر البوت ثم عدد شعبيتك ثم عدد الخصم\n"
     "   مثال: @{u} 20000 10000\n\n"
     "• فريق: أضف كلمة (فريق) قبل الرقمين\n"
-    "   مثال: @{u} فريق 20000 10000\n\n"
+    "   مثال: @{u} فريق 10000 20000\n\n"
+    "ℹ️ ملاحظة: الحسبة تقريبية وليس 100%\n"
     "ℹ️ استخدم الأزرار لتكتبها تلقائي وعدّل على الأرقام 👇"
 )
 
@@ -512,36 +513,36 @@ async def online_chosen(chosen: ChosenInlineResult):
     save_battle(chosen.from_user, mode, my_number, r["my_points"], opp_number,
                 r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="online")
 
-# ---------------- Guest Mode ----------------
-@dp.guest_message()
-async def guest_message_handler(message: Message):
-    text = message.text or ""
-    text = " ".join(t for t in text.split() if not t.startswith("@"))
-    parsed = parse_inline(text)
+# ---------------- Group handler (bot is a member) ----------------
+TRIGGER_WORDS = {
+    "حاسبة", "حاسبه", "نقاط",
+    "معركة", "معركه",
+    "معركة الشعبية", "معركه الشعبيه",
+}
 
-    if parsed is None:
-        article = InlineQueryResultArticle(
-            id="guest_help",
-            title="🔥 حاسبة معركة الشعبية - الشرح",
-            description="طريقة الاستخدام + أزرار",
-            input_message_content=InputTextMessageContent(message_text=help_text()),
-            reply_markup=help_keyboard(),
-        )
-        await message.answer_guest_query(result=article)
+async def send_group_help(message: Message):
+    await message.answer(help_text(), reply_markup=help_keyboard())
+
+@dp.message(F.chat.type.in_({"group", "supergroup"}), F.text)
+async def group_handler(message: Message):
+    text = (message.text or "").strip()
+
+    if BOT_USERNAME and f"@{BOT_USERNAME}".lower() in text.lower():
+        cleaned = " ".join(t for t in text.split() if not t.startswith("@"))
+        parsed = parse_inline(cleaned)
+        if parsed is None:
+            await send_group_help(message)
+            return
+        mode, my_number, opp_number = parsed
+        r = compute_battle(my_number, opp_number, mode)
+        await message.answer(r["text"])
+        save_battle(message.from_user, mode, my_number, r["my_points"], opp_number,
+                    r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="group")
         return
 
-    mode, my_number, opp_number = parsed
-    r = compute_battle(my_number, opp_number, mode)
-    article = InlineQueryResultArticle(
-        id=f"{mode}|{my_number}|{opp_number}",
-        title=f"{MODE_LABELS[mode]}: {my_number:,} ضد {opp_number:,}",
-        description=f"النتيجة: {r['result_label']}",
-        input_message_content=InputTextMessageContent(message_text=r["text"]),
-    )
-    await message.answer_guest_query(result=article)
-    if message.from_user:
-        save_battle(message.from_user, mode, my_number, r["my_points"], opp_number,
-                    r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="guest")
+    if text in TRIGGER_WORDS:
+        await send_group_help(message)
+        return
 
 # ---------------- Storage ----------------
 def save_battle(user, mode, my_number, my_points, opp_number, opp_points,
@@ -624,7 +625,7 @@ async def _startup_bg() -> None:
         await bot.set_webhook(
             WEBHOOK_URL,
             drop_pending_updates=True,
-            allowed_updates=["message", "callback_query", "inline_query", "chosen_inline_result", "guest_message"],
+            allowed_updates=["message", "callback_query", "inline_query", "chosen_inline_result"],
         )
         logger.info("Webhook set to %s", WEBHOOK_URL)
     except Exception as e:
