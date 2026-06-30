@@ -416,7 +416,14 @@ async def got_opp_number(message: Message, state: FSMContext):
 async def inline_battle(query: InlineQuery):
     parsed = parse_inline(query.query or "")
     if parsed is None:
-        await query.answer([], cache_time=1, is_personal=True)
+        help_article = InlineQueryResultArticle(
+            id="inline_help",
+            title="🔥 حاسبة معركة الشعبية - الشرح",
+            description="اكتب رقمين — أو أضف (فريق) قبلهم",
+            input_message_content=InputTextMessageContent(message_text=help_text()),
+            reply_markup=help_keyboard(),
+        )
+        await query.answer([help_article], cache_time=1, is_personal=True)
         return
     mode, my_number, opp_number = parsed
     r = compute_battle(my_number, opp_number, mode)
