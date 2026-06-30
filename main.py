@@ -266,9 +266,11 @@ bot = Bot(BOT_TOKEN)
 async def send_menu(message: Message, state: FSMContext = None):
     if state:
         await state.clear()
+    name = message.chat.first_name or message.chat.full_name or "صديقي"
     await message.answer(
-        "👋 أهلًا بك في حاسبة معركة الشعبية\n"
-        "اختر نوع المعركة:",
+        f"👋 أهلًا يا {name} في حاسبة معركة الشعبية\n"
+        "\n"
+        "اختر نوع حاسبة الشعبية:",
         reply_markup=menu_keyboard(),
     )
 
@@ -502,12 +504,12 @@ async def show_history(user_id: int, target: Message, mode: str):
         rows = [d.to_dict() for d in docs]
         rows = [r for r in rows if r.get("mode") == mode]
         rows.sort(key=lambda r: r.get("ts") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
-        rows = rows[:5]
+        rows = rows[:3]
         if not rows:
             await target.answer(f"📜 لا توجد نتائج في سجل {label} بعد.")
             return
         sep = "━━━━━━━━━━━━━━"
-        lines = [f"📜 آخر 5 معارك - {label}:", sep]
+        lines = [f"📜 آخر 3 معارك - {label}:", sep]
         for i, r in enumerate(rows, 1):
             res = r.get("result", "?").replace("✅", "").replace("❌", "").replace("🤝", "").strip()
             if mode == "team":
