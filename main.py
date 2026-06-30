@@ -158,8 +158,8 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
         text = (
             "🏆 نتيجة معركة الشعبية الفريق\n"
             "━━━━━━━━━━━━━━\n"
-            f"👤 دعم تيمي : {my_number:,}  →  {my_points} نقطة\n"
-            f"🎯 دعم تيم خصمي : {opp_number:,}  →  {opp_points} نقطة\n"
+            f"👤 دعم تيمي : {my_number:,}  =  {my_points} نقطة\n"
+            f"🎯 دعم تيم خصمي : {opp_number:,}  =  {opp_points} نقطة\n"
             "━━━━━━━━━━━━━━\n"
             f"النتيجة : {result_label}\n"
             f"لكل شخص من تيمك : {fmt(my_result)} نقطة\n"
@@ -176,8 +176,8 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
         text = (
             "🏆 نتيجة معركة الشعبية الفردية\n"
             "━━━━━━━━━━━━━━\n"
-            f"👤 نقاطك: {my_number:,}  →  {my_points} نقطة\n"
-            f"🎯 نقاط الخصم: {opp_number:,}  →  {opp_points} نقطة\n"
+            f"👤 نقاطك: {my_number:,}  =  {my_points} نقطة\n"
+            f"🎯 نقاط الخصم: {opp_number:,}  =  {opp_points} نقطة\n"
             "━━━━━━━━━━━━━━\n"
             f"النتيجة : {result_label}\n"
             f"     نقاطك : {fmt(my_result)} نقطة\n"
