@@ -83,7 +83,7 @@ TIERS_TEAM = [
     (6000001, float("inf"), 42),
 ]
 
-MODE_LABELS = {"individual": "الفردية", "team": "الفريق"}
+MODE_LABELS = {"individual": "الفردية", "team": "الفريق", "home": "المنزل"}
 TEAM_WORDS = {"فريق", "الفريق", "team", "Team", "TEAM"}
 
 def points_for(n: int, mode: str = "individual") -> int:
@@ -174,7 +174,7 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
         else:
             note = "تعادل: كل طرف يحتفظ بنقاطه كاملة"
         text = (
-            "🏆 نتيجة معركة الشعبية الفردية\n"
+            f"🏆 نتيجة معركة الشعبية {MODE_LABELS.get(mode, '')}\n"
             "━━━━━━━━━━━━━━\n"
             f"👤 نقاطك: {my_number:,}  =  {my_points} نقطة\n"
             f"🎯 نقاط الخصم: {opp_number:,}  =  {opp_points} نقطة\n"
@@ -220,8 +220,9 @@ def help_keyboard():
 def menu_keyboard():
     kb = InlineKeyboardBuilder()
     kb.button(text="⚔️ معركة الشعبية الفردية", callback_data="battle_individual")
+    kb.button(text="🏠 معركة شعبية المنزل", callback_data="battle_home")
     kb.button(text="👥 معركة الشعبية فريق", callback_data="battle_team")
-    kb.adjust(1)
+    kb.adjust(2, 1)
     return kb.as_markup()
 
 def landing_keyboard(mode: str):
@@ -243,6 +244,7 @@ def result_keyboard(mode: str):
 def history_picker_keyboard():
     kb = InlineKeyboardBuilder()
     kb.button(text="📜 سجل الفردية", callback_data="hist:individual")
+    kb.button(text="📜 سجل المنزل", callback_data="hist:home")
     kb.button(text="📜 سجل الفريق", callback_data="hist:team")
     kb.adjust(1)
     return kb.as_markup()
@@ -296,6 +298,8 @@ async def start_cmd(message: Message, state: FSMContext, command: CommandObject 
     arg = (command.args or "").strip() if command else ""
     if arg == "team":
         await send_landing(message, "team", state)
+    elif arg == "home":
+        await send_landing(message, "home", state)
     elif arg == "individual":
         await send_landing(message, "individual", state)
     else:
@@ -324,6 +328,11 @@ async def cb_individual(callback: CallbackQuery, state: FSMContext):
 async def cb_team(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     await send_landing(callback.message, "team", state)
+
+@dp.callback_query(F.data == "battle_home")
+async def cb_home(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await send_landing(callback.message, "home", state)
 
 @dp.callback_query(F.data == "menu")
 async def cb_menu(callback: CallbackQuery, state: FSMContext):
