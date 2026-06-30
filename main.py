@@ -31,7 +31,10 @@ WEBHOOK_HOST = (os.environ.get("WEBHOOK_HOST") or os.environ["RENDER_EXTERNAL_UR
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = WEBHOOK_HOST + WEBHOOK_PATH
 PORT = int(os.environ.get("PORT", "10000"))
-ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
+try:
+    ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
+except ValueError:
+    ADMIN_ID = 0
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("battlebot")
