@@ -15,6 +15,8 @@ from aiogram.types import (
     InlineQueryResultArticle,
     InputTextMessageContent,
     ChosenInlineResult,
+    BotCommand,
+    BotCommandScopeChat,
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
@@ -29,6 +31,7 @@ WEBHOOK_HOST = (os.environ.get("WEBHOOK_HOST") or os.environ["RENDER_EXTERNAL_UR
 WEBHOOK_PATH = f"/webhook/{BOT_TOKEN}"
 WEBHOOK_URL = WEBHOOK_HOST + WEBHOOK_PATH
 PORT = int(os.environ.get("PORT", "10000"))
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "0"))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("battlebot")
@@ -196,12 +199,13 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
 
 # ---------------- Help text + keyboards ----------------
 HELP_TEMPLATE = (
+    "🔥 حاسبة معركة الشعبية - طريقة الاستخدام\n"
+    "━━━━━━━━━━━━━━\n"
     "احسب نتيجة معركتك في أي محادثة بيوزر البوت:\n\n"
     "• فردية: اكتب يوزر البوت ثم عدد شعبيتك ثم عدد الخصم\n"
     "   مثال: @{u} 20000 10000\n\n"
-    "• فريق: أضف كلمة (فريق) قبل عدد الشعبية\n"
+    "• فريق: أضف كلمة (فريق) قبل الرقمين\n"
     "   مثال: @{u} فريق 20000 10000\n\n"
-    "• ملاحظة: الحسبة تقريبية وليس 100%\n"
     "ℹ️ استخدم الأزرار لتكتبها تلقائي وعدّل على الأرقام 👇"
 )
 
@@ -253,6 +257,39 @@ def cancel_keyboard():
     kb.button(text="❌ إلغاء", callback_data="cancel")
     kb.adjust(1)
     return kb.as_markup()
+
+def admin_menu_keyboard():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📊 الإحصائيات", callback_data="admin:stats")
+    kb.button(text="📢 بث رسالة", callback_data="admin:broadcast")
+    kb.button(text="🚫 إدارة الحظر", callback_data="admin:ban")
+    kb.adjust(1)
+    return kb.as_markup()
+
+def compute_admin_stats() -> str:
+    if db is None:
+        return "📊 التخزين غير مفعّل حاليًا."
+    try:
+        docs = list(db.collection("battles").limit(5000).stream())
+        rows = [d.to_dict() for d in docs]
+        users = {r.get("user_id") for r in rows if r.get("user_id")}
+        by_mode = {"individual": 0, "home": 0, "team": 0}
+        for r in rows:
+            m = r.get("mode")
+            if m in by_mode:
+                by_mode[m] += 1
+        return (
+            "🛠 لوحة المالك - الإحصائيات\n"
+            "━━━━━━━━━━━━━━\n"
+            f"👥 المستخدمون: {len(users)}\n"
+            f"⚔️ إجمالي المعارك: {len(rows)}\n"
+            f"   • فردية: {by_mode['individual']}\n"
+            f"   • منزل: {by_mode['home']}\n"
+            f"   • فريق: {by_mode['team']}"
+        )
+    except Exception as e:
+        logger.exception("admin stats failed: %s", e)
+        return "⚠️ تعذّر جلب الإحصائيات الآن."
 
 # ---------------- FSM ----------------
 class BattleFSM(StatesGroup):
@@ -314,6 +351,33 @@ async def battle_cmd(message: Message, state: FSMContext):
 async def history_cmd(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("اختر السجل:", reply_markup=history_picker_keyboard())
+
+@dp.message(Command("wafi_al"))
+async def admin_cmd(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        return
+    await state.clear()
+    await message.answer(
+        "👑 أهلًا بك يا المالك\n"
+        "\n"
+        "وش حاب تختار:",
+        reply_markup=admin_menu_keyboard(),
+    )
+
+@dp.callback_query(F.data == "admin:stats")
+async def cb_admin_stats(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer()
+        return
+    await callback.answer()
+    await callback.message.answer(compute_admin_stats())
+
+@dp.callback_query(F.data.in_({"admin:broadcast", "admin:ban"}))
+async def cb_admin_soon(callback: CallbackQuery):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer()
+        return
+    await callback.answer("🔜 قريبًا — نضيفها بالخطوة الجاية", show_alert=True)
 
 @dp.message(Command("cancel"))
 async def cancel(message: Message, state: FSMContext):
@@ -562,6 +626,15 @@ async def _startup_bg() -> None:
         logger.info("Webhook set to %s", WEBHOOK_URL)
     except Exception as e:
         logger.exception("set_webhook failed (service still running): %s", e)
+    if ADMIN_ID:
+        try:
+            await bot.set_my_commands(
+                [BotCommand(command="wafi_al", description="لوحة المالك")],
+                scope=BotCommandScopeChat(chat_id=ADMIN_ID),
+            )
+            logger.info("Admin command registered for %s", ADMIN_ID)
+        except Exception as e:
+            logger.exception("set_my_commands failed: %s", e)
 
 async def on_startup() -> None:
     asyncio.create_task(_startup_bg())
