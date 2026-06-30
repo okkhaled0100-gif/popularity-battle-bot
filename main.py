@@ -525,21 +525,10 @@ async def send_group_help(message: Message):
 
 @dp.message(F.chat.type.in_({"group", "supergroup"}), F.text)
 async def group_handler(message: Message):
-    text = (message.text or "").strip()
-
-    if BOT_USERNAME and f"@{BOT_USERNAME}".lower() in text.lower():
-        cleaned = " ".join(t for t in text.split() if not t.startswith("@"))
-        parsed = parse_inline(cleaned)
-        if parsed is None:
-            await send_group_help(message)
-            return
-        mode, my_number, opp_number = parsed
-        r = compute_battle(my_number, opp_number, mode)
-        await message.answer(r["text"])
-        save_battle(message.from_user, mode, my_number, r["my_points"], opp_number,
-                    r["opp_points"], r["result_label"], r["my_result"], r["opp_result"], source="group")
+    # تجاهل رسائل البوت نفسه ومنع أي حلقة
+    if message.from_user and message.from_user.is_bot:
         return
-
+    text = (message.text or "").strip()
     if text in TRIGGER_WORDS:
         await send_group_help(message)
         return
