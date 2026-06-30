@@ -170,13 +170,12 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
 HELP_TEMPLATE = (
     "🔥 حاسبة معركة الشعبية - طريقة الاستخدام\n"
     "━━━━━━━━━━━━━━\n"
-    "احسب نتيجة معركتك في أي محادثة بذكر البوت:\n\n"
-    "• فردية: اكتب يوزر البوت ثم رقمك ثم رقم الخصم\n"
-    "   مثال: @{u} 1200000 900000\n\n"
+    "احسب نتيجة معركتك في أي محادثة بيوزر البوت:\n\n"
+    "• فردية: اكتب يوزر البوت ثم عدد شعبيتك ثم عدد الخصم\n"
+    "   مثال: @{u} 20000 10000\n\n"
     "• فريق: أضف كلمة (فريق) قبل الرقمين\n"
-    "   مثال: @{u} فريق 1200000 900000\n\n"
-    "ℹ️ الأكبر يفوز، والنتيجة تُحسب بنقاط كل طرف.\n"
-    "أو افتح البوت من الأزرار 👇"
+    "   مثال: @{u} فريق 20000 10000\n\n"
+    "ℹ️ استخدم الأزرار لتكتبها تلقائي وعدّل على الأرقام 👇"
 )
 
 def help_text():
@@ -184,8 +183,8 @@ def help_text():
 
 def help_keyboard():
     kb = InlineKeyboardBuilder()
-    kb.button(text="⚔️ معركة الشعبية الفردية", switch_inline_query_current_chat="1200000 900000")
-    kb.button(text="👥 معركة الشعبية فريق", switch_inline_query_current_chat="فريق 1200000 900000")
+    kb.button(text="⚔️ معركة الفردية", switch_inline_query_current_chat="20000 10000")
+    kb.button(text="👥 معركة فريق", switch_inline_query_current_chat="فريق 20000 10000")
     kb.button(text="🙈 إخفاء الشرح", callback_data="hide_help")
     kb.adjust(2, 1)
     return kb.as_markup()
