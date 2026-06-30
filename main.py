@@ -130,33 +130,61 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
     my_points = points_for(my_number, mode)
     opp_points = points_for(opp_number, mode)
 
-    if my_number > opp_number:
+    if mode == "team":
+        outcome = "win" if my_number > opp_number else "loss"  # تعادل = خسارة
+    else:
+        if my_number > opp_number:
+            outcome = "win"
+        elif my_number < opp_number:
+            outcome = "loss"
+        else:
+            outcome = "tie"
+
+    if outcome == "win":
         result_label = "فوز ✅"
         my_result = my_points + opp_points / 2
         opp_result = opp_points / 2
-        note = "في حال الفوز تأخذ نصف نقاط الخصم"
-    elif my_number < opp_number:
+    elif outcome == "loss":
         result_label = "خسارة ❌"
         my_result = my_points / 2
         opp_result = opp_points + my_points / 2
-        note = "في حال الخسارة تأخذ نصف نقاطك فقط"
     else:
         result_label = "تعادل 🤝"
         my_result = my_points
         opp_result = opp_points
-        note = "تعادل: كل طرف يحتفظ بنقاطه كاملة"
 
-    text = (
-        f"🏆 نتيجة معركة الشعبية {MODE_LABELS.get(mode, '')}\n"
-        "━━━━━━━━━━━━━━\n"
-        f"👤 نقاطك: {my_number:,}  →  {my_points} نقطة\n"
-        f"🎯 نقاط الخصم: {opp_number:,}  →  {opp_points} نقطة\n"
-        "━━━━━━━━━━━━━━\n"
-        f"النتيجة : {result_label}\n"
-        f"     نقاطك : {fmt(my_result)} نقطة\n"
-        f"    نقاط الخصم : {fmt(opp_result)} نقطة\n"
-        f" {note}"
-    )
+    if mode == "team":
+        note = "فوز = نقاطكم كاملة + نصف نقاط التيم ضدكم" if outcome == "win" else "خسارة = تأخذون نصف نقاطكم فقط"
+        text = (
+            "🏆 نتيجة معركة الشعبية الفريق\n"
+            "━━━━━━━━━━━━━━\n"
+            f"👤 نقاط تيمك : {my_number:,}  →  {my_points} نقطة\n"
+            f"🎯 نقاط تيم الخصم : {opp_number:,}  →  {opp_points} نقطة\n"
+            "━━━━━━━━━━━━━━\n"
+            f"النتيجة : {result_label}\n"
+            f"لكل شخص من تيمك : {fmt(my_result)} نقطة\n"
+            f"لكل شخص من تيم الخصم : {fmt(opp_result)} نقطة\n"
+            f"{note}"
+        )
+    else:
+        if outcome == "win":
+            note = "في حال الفوز تأخذ نصف نقاط الخصم"
+        elif outcome == "loss":
+            note = "في حال الخسارة تأخذ نصف نقاطك فقط"
+        else:
+            note = "تعادل: كل طرف يحتفظ بنقاطه كاملة"
+        text = (
+            "🏆 نتيجة معركة الشعبية الفردية\n"
+            "━━━━━━━━━━━━━━\n"
+            f"👤 نقاطك: {my_number:,}  →  {my_points} نقطة\n"
+            f"🎯 نقاط الخصم: {opp_number:,}  →  {opp_points} نقطة\n"
+            "━━━━━━━━━━━━━━\n"
+            f"النتيجة : {result_label}\n"
+            f"     نقاطك : {fmt(my_result)} نقطة\n"
+            f"    نقاط الخصم : {fmt(opp_result)} نقطة\n"
+            f" {note}"
+        )
+
     return {
         "text": text,
         "my_points": my_points,
@@ -255,10 +283,11 @@ async def start_calc(message: Message, mode: str, state: FSMContext):
     await state.clear()
     await state.set_state(BattleFSM.my_number)
     await state.update_data(mode=mode)
+    prompt = "أرسل عدد شعبية تيمك كامل:" if mode == "team" else "أرسل عدد شعبيتك"
     await message.answer(
         f"🔥 معركة الشعبية - {MODE_LABELS.get(mode, '')}\n"
         "━━━━━━━━━━━━━━\n"
-        "أرسل عدد شعبيتك",
+        f"{prompt}",
         reply_markup=cancel_keyboard(),
     )
 
@@ -343,11 +372,18 @@ async def got_my_number(message: Message, state: FSMContext):
     mode = data.get("mode", "individual")
     await state.update_data(my_number=n)
     await state.set_state(BattleFSM.opp_number)
-    await message.answer(
-        f"✅ شعبيتك: {n:,} = {points_for(n, mode)} نقطة\n\n"
-        "الآن أرسل عدد شعبية الخصم:",
-        reply_markup=cancel_keyboard(),
-    )
+    if mode == "team":
+        await message.answer(
+            f"✅ شعبيتكم: {n:,} = {points_for(n, mode)} نقطة\n\n"
+            "الآن أرسل عدد شعبية تيم الخصم كامل:",
+            reply_markup=cancel_keyboard(),
+        )
+    else:
+        await message.answer(
+            f"✅ شعبيتك: {n:,} = {points_for(n, mode)} نقطة\n\n"
+            "الآن أرسل عدد شعبية الخصم:",
+            reply_markup=cancel_keyboard(),
+        )
 
 @dp.message(StateFilter(BattleFSM.opp_number))
 async def got_opp_number(message: Message, state: FSMContext):
@@ -465,13 +501,22 @@ async def show_history(user_id: int, target: Message, mode: str):
         lines = [f"📜 آخر 5 معارك - {label}:", sep]
         for i, r in enumerate(rows, 1):
             res = r.get("result", "?").replace("✅", "").replace("❌", "").replace("🤝", "").strip()
-            lines.append(
-                f"{i}- النتيجة: {res}\n"
-                f"دعمي : {r.get('my_number', 0):,} ({r.get('my_points', 0)}نقطة)\n"
-                f"دعم خصمي : {r.get('opp_number', 0):,} ({r.get('opp_points', 0)}نقطة)\n"
-                f"نقاطي : {fmt(r.get('my_result', 0))} نقطة\n"
-                f"نقاط الخصم : {fmt(r.get('opp_result', 0))} نقطة"
-            )
+            if mode == "team":
+                lines.append(
+                    f"{i}- النتيجة: {res}\n"
+                    f"دعم تيمي : {r.get('my_number', 0):,} ({r.get('my_points', 0)}نقطة)\n"
+                    f"دعم تيم خصمي : {r.get('opp_number', 0):,} ({r.get('opp_points', 0)}نقطة)\n"
+                    f"نقاط تيمي : {fmt(r.get('my_result', 0))} نقطة\n"
+                    f"نقاط تيم الخصم : {fmt(r.get('opp_result', 0))} نقطة"
+                )
+            else:
+                lines.append(
+                    f"{i}- النتيجة: {res}\n"
+                    f"دعمي : {r.get('my_number', 0):,} ({r.get('my_points', 0)}نقطة)\n"
+                    f"دعم خصمي : {r.get('opp_number', 0):,} ({r.get('opp_points', 0)}نقطة)\n"
+                    f"نقاطي : {fmt(r.get('my_result', 0))} نقطة\n"
+                    f"نقاط الخصم : {fmt(r.get('opp_result', 0))} نقطة"
+                )
             lines.append(sep)
         await target.answer("\n".join(lines))
     except Exception as e:
