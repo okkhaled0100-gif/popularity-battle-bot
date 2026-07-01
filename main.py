@@ -136,28 +136,16 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
     my_points = points_for(my_number, mode)
     opp_points = points_for(opp_number, mode)
 
-    if mode == "team":
-        outcome = "win" if my_number > opp_number else "loss"  # تعادل = خسارة
-    else:
-        if my_number > opp_number:
-            outcome = "win"
-        elif my_number < opp_number:
-            outcome = "loss"
-        else:
-            outcome = "tie"
+    outcome = "win" if my_number > opp_number else "loss"  # تعادل = خسارة
 
     if outcome == "win":
         result_label = "فوز ✅"
         my_result = my_points + opp_points / 2
         opp_result = opp_points / 2
-    elif outcome == "loss":
+    else:
         result_label = "خسارة ❌"
         my_result = my_points / 2
         opp_result = opp_points + my_points / 2
-    else:
-        result_label = "تعادل 🤝"
-        my_result = my_points
-        opp_result = opp_points
 
     if mode == "team":
         note = "فوز = نقاطكم كاملة + نصف نقاط التيم ضدكم" if outcome == "win" else "خسارة = تأخذون نصف نقاطكم فقط"
@@ -173,12 +161,7 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
             f"{note}"
         )
     else:
-        if outcome == "win":
-            note = "في حال الفوز تأخذ نصف نقاط الخصم"
-        elif outcome == "loss":
-            note = "في حال الخسارة تأخذ نصف نقاطك فقط"
-        else:
-            note = "تعادل: كل طرف يحتفظ بنقاطه كاملة"
+        note = "فوز = نقاطك+نصف نقاط خصمك" if outcome == "win" else "خسارة = تأخذ نصف نقاطك فقط"
         text = (
             f"🏆 نتيجة معركة الشعبية {MODE_LABELS.get(mode, '')}\n"
             "━━━━━━━━━━━━━━\n"
@@ -186,9 +169,9 @@ def compute_battle(my_number: int, opp_number: int, mode: str):
             f"🎯 نقاط الخصم: {opp_number:,}  =  {opp_points} نقطة\n"
             "━━━━━━━━━━━━━━\n"
             f"النتيجة : {result_label}\n"
-            f"     نقاطك : {fmt(my_result)} نقطة\n"
-            f"    نقاط الخصم : {fmt(opp_result)} نقطة\n"
-            f" {note}"
+            f"نقاطك : {fmt(my_result)} نقطة\n"
+            f"نقاط الخصم : {fmt(opp_result)} نقطة\n"
+            f"{note}"
         )
 
     return {
