@@ -338,7 +338,7 @@ async def start_calc(message: Message, mode: str, state: FSMContext):
         reply_markup=cancel_keyboard(),
     )
 
-@dp.message(CommandStart())
+@dp.message(CommandStart(), F.chat.type == "private")
 async def start_cmd(message: Message, state: FSMContext, command: CommandObject = None):
     register_user(message.from_user)
     arg = (command.args or "").strip() if command else ""
@@ -351,11 +351,23 @@ async def start_cmd(message: Message, state: FSMContext, command: CommandObject 
     else:
         await send_menu(message, state)
 
-@dp.message(Command("battle"))
+@dp.message(CommandStart(), F.chat.type.in_({"group", "supergroup"}))
+async def start_cmd_group(message: Message):
+    kb = InlineKeyboardBuilder()
+    if BOT_USERNAME:
+        kb.button(text="🔗 افتح البوت بالخاص", url=f"https://t.me/{BOT_USERNAME}?start=1")
+    kb.adjust(1)
+    await message.answer(
+        "👋 للحاسبة الكاملة افتح البوت بالخاص\n"
+        "أو اكتب: حاسبة",
+        reply_markup=kb.as_markup(),
+    )
+
+@dp.message(Command("battle"), F.chat.type == "private")
 async def battle_cmd(message: Message, state: FSMContext):
     await send_menu(message, state)
 
-@dp.message(Command("history"))
+@dp.message(Command("history"), F.chat.type == "private")
 async def history_cmd(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("اختر السجل:", reply_markup=history_picker_keyboard())
