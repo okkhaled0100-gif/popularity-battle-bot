@@ -111,13 +111,14 @@
     const oppLbl = isTeam ? "دعم تيم خصمي" : "نقاط الخصم";
     const myResLbl = isTeam ? "لكل شخص من تيمك" : "نقاطك النهائية";
     const oppResLbl = isTeam ? "لكل شخص من تيم الخصم" : "نقاط الخصم النهائية";
+    const noteLine = (d.text || "").trim().split("\n").pop();
     res.innerHTML = `
       <div class="rhead ${cls}">${d.result}</div>
       <div class="row"><span>${myLbl}</span><span class="v">${nf(d.my_number)} = ${d.my_points} نقطة</span></div>
       <div class="row"><span>${oppLbl}</span><span class="v">${nf(d.opp_number)} = ${d.opp_points} نقطة</span></div>
       <div class="row"><span>${myResLbl}</span><span class="v">${fmt(d.my_result)} نقطة</span></div>
       <div class="row"><span>${oppResLbl}</span><span class="v">${fmt(d.opp_result)} نقطة</span></div>
-      <div class="note">${isTeam ? "الأكبر يفوز، والتعادل يُحتسب خسارة" : "الأكبر يفوز"}</div>
+      <div class="note">${noteLine}</div>
     `;
     res.classList.add("show");
   }
