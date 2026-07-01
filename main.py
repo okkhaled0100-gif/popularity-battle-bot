@@ -274,16 +274,19 @@ def compute_admin_stats() -> str:
     try:
         docs = list(db.collection("battles").limit(5000).stream())
         rows = [d.to_dict() for d in docs]
-        users = {r.get("user_id") for r in rows if r.get("user_id")}
         by_mode = {"individual": 0, "home": 0, "team": 0}
         for r in rows:
             m = r.get("mode")
             if m in by_mode:
                 by_mode[m] += 1
+        try:
+            users_count = len(list(db.collection("users").limit(10000).stream()))
+        except Exception:
+            users_count = len({r.get("user_id") for r in rows if r.get("user_id")})
         return (
             "🛠 لوحة المالك - الإحصائيات\n"
             "━━━━━━━━━━━━━━\n"
-            f"👥 المستخدمون: {len(users)}\n"
+            f"👥 المستخدمون: {users_count}\n"
             f"⚔️ إجمالي المعارك: {len(rows)}\n"
             f"   • فردية: {by_mode['individual']}\n"
             f"   • منزل: {by_mode['home']}\n"
@@ -297,6 +300,9 @@ def compute_admin_stats() -> str:
 class BattleFSM(StatesGroup):
     my_number = State()
     opp_number = State()
+
+class AdminFSM(StatesGroup):
+    broadcast = State()
 
 dp = Dispatcher()
 bot = Bot(BOT_TOKEN)
@@ -335,6 +341,7 @@ async def start_calc(message: Message, mode: str, state: FSMContext):
 
 @dp.message(CommandStart())
 async def start_cmd(message: Message, state: FSMContext, command: CommandObject = None):
+    register_user(message.from_user)
     arg = (command.args or "").strip() if command else ""
     if arg == "team":
         await send_landing(message, "team", state)
@@ -374,12 +381,62 @@ async def cb_admin_stats(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer(compute_admin_stats())
 
-@dp.callback_query(F.data.in_({"admin:broadcast", "admin:ban"}))
+@dp.callback_query(F.data == "admin:broadcast")
+async def cb_admin_broadcast(callback: CallbackQuery, state: FSMContext):
+    if callback.from_user.id != ADMIN_ID:
+        await callback.answer()
+        return
+    await callback.answer()
+    await state.set_state(AdminFSM.broadcast)
+    await callback.message.answer(
+        "📢 أرسل الآن الرسالة اللي تبغى تبثها لكل المستخدمين.\n"
+        "(أرسل /cancel للإلغاء)"
+    )
+
+@dp.callback_query(F.data == "admin:ban")
 async def cb_admin_soon(callback: CallbackQuery):
     if callback.from_user.id != ADMIN_ID:
         await callback.answer()
         return
     await callback.answer("🔜 قريبًا — نضيفها بالخطوة الجاية", show_alert=True)
+
+@dp.message(StateFilter(AdminFSM.broadcast), F.from_user.id == ADMIN_ID)
+async def got_broadcast(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer("⏳ جاري البث...")
+    sent, failed, total = await do_broadcast(message)
+    await message.answer(
+        "✅ انتهى البث\n"
+        "━━━━━━━━━━━━━━\n"
+        f"👥 إجمالي المستخدمين: {total}\n"
+        f"✅ وصلت: {sent}\n"
+        f"❌ فشلت: {failed}"
+    )
+
+async def do_broadcast(message: Message):
+    sent = failed = total = 0
+    if db is None:
+        return 0, 0, 0
+    try:
+        docs = list(db.collection("users").limit(10000).stream())
+    except Exception as e:
+        logger.exception("broadcast list failed: %s", e)
+        return 0, 0, 0
+    for d in docs:
+        u = d.to_dict()
+        if u.get("banned"):
+            continue
+        uid = u.get("user_id")
+        if not uid:
+            continue
+        total += 1
+        try:
+            await bot.copy_message(chat_id=uid, from_chat_id=message.chat.id, message_id=message.message_id)
+            sent += 1
+        except Exception:
+            failed += 1
+        await asyncio.sleep(0.05)
+    return sent, failed, total
 
 @dp.message(Command("cancel"))
 async def cancel(message: Message, state: FSMContext):
@@ -523,7 +580,6 @@ async def send_group_help(message: Message):
 
 @dp.message(F.chat.type.in_({"group", "supergroup"}), F.text)
 async def group_handler(message: Message):
-    # تجاهل رسائل البوت نفسه ومنع أي حلقة
     if message.from_user and message.from_user.is_bot:
         return
     text = (message.text or "").strip()
@@ -532,8 +588,28 @@ async def group_handler(message: Message):
         return
 
 # ---------------- Storage ----------------
+def register_user(user):
+    if db is None or user is None:
+        return
+    try:
+        ref = db.collection("users").document(str(user.id))
+        snap = ref.get()
+        data = {
+            "user_id": user.id,
+            "username": user.username,
+            "name": user.full_name,
+            "last_seen": datetime.now(timezone.utc),
+        }
+        if not snap.exists:
+            data["first_seen"] = datetime.now(timezone.utc)
+            data["banned"] = False
+        ref.set(data, merge=True)
+    except Exception as e:
+        logger.exception("register_user failed: %s", e)
+
 def save_battle(user, mode, my_number, my_points, opp_number, opp_points,
                 result_label, my_result, opp_result, source="calc"):
+    register_user(user)
     if db is None:
         return
     try:
