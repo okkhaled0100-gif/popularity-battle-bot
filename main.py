@@ -272,25 +272,24 @@ def compute_admin_stats() -> str:
     if db is None:
         return "📊 التخزين غير مفعّل حاليًا."
     try:
-        docs = list(db.collection("battles").limit(5000).stream())
-        rows = [d.to_dict() for d in docs]
-        by_mode = {"individual": 0, "home": 0, "team": 0}
-        for r in rows:
-            m = r.get("mode")
-            if m in by_mode:
-                by_mode[m] += 1
         try:
             users_count = len(list(db.collection("users").limit(10000).stream()))
         except Exception:
-            users_count = len({r.get("user_id") for r in rows if r.get("user_id")})
+            users_count = 0
+        snap = db.collection("stats").document("counters").get()
+        c = snap.to_dict() if snap.exists else {}
+        total = c.get("total", 0)
+        ind = c.get("mode_individual", 0)
+        home = c.get("mode_home", 0)
+        team = c.get("mode_team", 0)
         return (
             "🛠 لوحة المالك - الإحصائيات\n"
             "━━━━━━━━━━━━━━\n"
             f"👥 المستخدمون: {users_count}\n"
-            f"⚔️ إجمالي المعارك: {len(rows)}\n"
-            f"   • فردية: {by_mode['individual']}\n"
-            f"   • منزل: {by_mode['home']}\n"
-            f"   • فريق: {by_mode['team']}"
+            f"⚔️ إجمالي المعارك: {total}\n"
+            f"   • فردية: {ind}\n"
+            f"   • منزل: {home}\n"
+            f"   • فريق: {team}"
         )
     except Exception as e:
         logger.exception("admin stats failed: %s", e)
@@ -607,6 +606,29 @@ def register_user(user):
     except Exception as e:
         logger.exception("register_user failed: %s", e)
 
+def bump_counters(mode: str):
+    if db is None:
+        return
+    try:
+        db.collection("stats").document("counters").set(
+            {"total": firestore.Increment(1), f"mode_{mode}": firestore.Increment(1)},
+            merge=True,
+        )
+    except Exception as e:
+        logger.exception("bump_counters failed: %s", e)
+
+def trim_history(user_id: int, mode: str, keep: int = 3):
+    if db is None:
+        return
+    try:
+        docs = list(db.collection("battles").where("user_id", "==", user_id).limit(100).stream())
+        same = [d for d in docs if d.to_dict().get("mode") == mode]
+        same.sort(key=lambda d: d.to_dict().get("ts") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        for d in same[keep:]:
+            d.reference.delete()
+    except Exception as e:
+        logger.exception("trim_history failed: %s", e)
+
 def save_battle(user, mode, my_number, my_points, opp_number, opp_points,
                 result_label, my_result, opp_result, source="calc"):
     register_user(user)
@@ -630,6 +652,9 @@ def save_battle(user, mode, my_number, my_points, opp_number, opp_points,
         })
     except Exception as e:
         logger.exception("Firestore save failed: %s", e)
+        return
+    bump_counters(mode)
+    trim_history(user.id, mode, keep=3)
 
 async def show_history(user_id: int, target: Message, mode: str):
     label = MODE_LABELS.get(mode, "")
